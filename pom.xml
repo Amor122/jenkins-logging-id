@@ -13,7 +13,7 @@
 
   <groupId>io.jenkins.plugins</groupId>
   <artifactId>logging-id</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0</version>
   <packaging>hpi</packaging>
 
   <name>Logging ID</name>
@@ -41,6 +41,14 @@
       <scope>provided</scope>
     </dependency>
   </dependencies>
+
+  <distributionManagement>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/Amor122/jenkins-logging-id</url>
+    </repository>
+  </distributionManagement>
 
   <repositories>
     <repository>

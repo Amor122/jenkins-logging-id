@@ -36,6 +36,18 @@ mvn -B -ntp package
 Then upload `target/logging-id.hpi` via **Manage Jenkins → Plugins → Advanced settings → Deploy
 plugin**, or copy it to `$JENKINS_HOME/plugins/` and restart Jenkins.
 
+Release builds are also published to GitHub Packages. To resolve them from another Maven build,
+add the repository to your `pom.xml`:
+
+```xml
+<repository>
+  <id>github</id>
+  <url>https://maven.pkg.github.com/Amor122/jenkins-logging-id</url>
+</repository>
+```
+
+and supply credentials with `packages:read` in `~/.m2/settings.xml` under the `github` server id.
+
 ## Usage
 
 1. Trigger any error that produces an Oops page, for example by uploading a plugin while the
