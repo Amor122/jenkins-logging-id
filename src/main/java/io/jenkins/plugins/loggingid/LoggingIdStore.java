@@ -41,7 +41,7 @@ public final class LoggingIdStore {
         entries = Collections.synchronizedMap(new LinkedHashMap<String, LoggingIdEntry>(16, 0.75f, false) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, LoggingIdEntry> eldest) {
-                return size() > maxEntries;
+                return super.size() > maxEntries;
             }
         });
         handler = new CaptureHandler();
