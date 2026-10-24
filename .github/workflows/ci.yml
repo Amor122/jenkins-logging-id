@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -30,11 +30,3 @@ jobs:
             grep -E '\[ERROR\]|Tests run:|BUILD|Caused by' build.log | tail -80
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          mkdir -p ci-logs
-          tail -c 60000 build.log > ci-logs/last-failure.log
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -B ci-log
-          git add -f ci-logs/last-failure.log
-          git commit -m "ci: capture failure log [skip ci]"
-          git push -f origin ci-log

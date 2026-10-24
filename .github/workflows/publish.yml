@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -23,6 +23,19 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
       - name: Deploy
-        run: mvn -B -ntp deploy
+        run: |
+          set -o pipefail
+          mvn -B -ntp deploy 2>&1 | tee build.log
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Capture failure
+        if: failure()
+        run: |
+          mkdir -p ci-logs
+          tail -c 60000 build.log > ci-logs/publish-failure.log
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B ci-log
+          git add -f ci-logs/publish-failure.log
+          git commit -m "ci: capture publish failure log [skip ci]"
+          git push -f origin ci-log
