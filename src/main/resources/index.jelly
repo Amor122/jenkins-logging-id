@@ -1,0 +1,5 @@
+<?jelly escape-by-default='true'?>
+<div>
+  Captures unhandled exception logs by Jenkins Logging ID. Administrators see the matching log directly on the
+  Oops page and can search recent Logging IDs from the "Logging ID" link.
+</div>

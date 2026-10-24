@@ -1,0 +1,111 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:l="/lib/layout">
+  <l:layout title="Logging ID">
+    <l:main-panel>
+      <h1>Logging ID</h1>
+      <p>
+        Unhandled exceptions are captured by their Jenkins Logging ID and kept separately from the
+        System Log ring buffer, so they stay searchable after the System Log page has rotated them out.
+      </p>
+
+      <j:if test="${!it.permitted}">
+        <div class="alert alert-danger">
+          Administrator permission is required to view error logs.
+        </div>
+      </j:if>
+
+      <j:if test="${it.permitted}">
+        <form method="get" action="${rootURL}/logging-id/" style="margin: 1em 0; display: flex; gap: 0.5em; flex-wrap: wrap;">
+          <input type="text" name="q" value="${it.query}" placeholder="Logging ID, exception, logger or keyword"
+                 style="flex: 1 1 24em; padding: 0.4em;" autofocus="autofocus"/>
+          <select name="level" style="padding: 0.4em;">
+            <j:choose>
+              <j:when test="${empty it.levelFilter}">
+                <option value="" selected="selected">All levels</option>
+              </j:when>
+              <j:otherwise>
+                <option value="">All levels</option>
+              </j:otherwise>
+            </j:choose>
+            <j:choose>
+              <j:when test="${it.levelFilter == 'WARNING'}">
+                <option value="WARNING" selected="selected">WARNING</option>
+              </j:when>
+              <j:otherwise>
+                <option value="WARNING">WARNING</option>
+              </j:otherwise>
+            </j:choose>
+            <j:choose>
+              <j:when test="${it.levelFilter == 'SEVERE'}">
+                <option value="SEVERE" selected="selected">SEVERE</option>
+              </j:when>
+              <j:otherwise>
+                <option value="SEVERE">SEVERE</option>
+              </j:otherwise>
+            </j:choose>
+          </select>
+          <button type="submit" class="jenkins-button jenkins-button--primary">Search</button>
+        </form>
+
+        <p style="color: #666;">
+          Keeping the most recent ${it.maxEntries} captured exceptions
+          (currently ${it.storedCount}, ${it.entries.size()} matching). Records are not persisted across restarts.
+        </p>
+
+        <j:set var="selected" value="${it.selected}"/>
+        <j:if test="${selected != null}">
+          <div style="border: 1px solid #ddd; border-radius: 4px; padding: 1em; margin-bottom: 1em;">
+            <h2 style="margin-top: 0;">Logging ID=${selected.id}</h2>
+            <p style="margin: 0.3em 0;">
+              <b>Time:</b> ${selected.time}
+              <span style="margin-left: 1.5em;"><b>Level:</b> ${selected.level}</span>
+              <span style="margin-left: 1.5em;"><b>Logger:</b> ${selected.loggerName}</span>
+            </p>
+            <p style="margin: 0.3em 0;"><b>Exception:</b> <code>${selected.exceptionType}</code></p>
+            <j:if test="${selected.rootCause != ''}">
+              <p style="margin: 0.3em 0;"><b>Root cause:</b> <code>${selected.rootCause}</code></p>
+            </j:if>
+            <div style="display: flex; gap: 1em; align-items: center; margin: 0.6em 0;">
+              <l:copyButton text="${selected.text}"/>
+              <a class="jenkins-button jenkins-button--tertiary"
+                 href="${rootURL}/logging-id/log?id=${selected.id}"
+                 download="logging-id-${selected.id}.txt">Download full log</a>
+            </div>
+            <pre style="max-height: 600px; overflow: auto; white-space: pre-wrap; word-break: break-word; background: #f7f7f7; padding: 1em; border-radius: 4px; margin-bottom: 0;">${selected.text}</pre>
+          </div>
+        </j:if>
+
+        <j:set var="entries" value="${it.entries}"/>
+        <j:choose>
+          <j:when test="${empty entries}">
+            <p>No matching captured exceptions.</p>
+          </j:when>
+          <j:otherwise>
+            <table class="jenkins-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Logging ID</th>
+                  <th>Level</th>
+                  <th>Exception</th>
+                  <th>Message</th>
+                </tr>
+              </thead>
+              <tbody>
+                <j:forEach var="e" items="${entries}">
+                  <tr>
+                    <td style="white-space: nowrap;">${e.time}</td>
+                    <td style="white-space: nowrap;"><a href="${rootURL}/logging-id/?q=${e.id}"><code>${e.id}</code></a></td>
+                    <td>${e.level}</td>
+                    <td style="word-break: break-word;"><code>${e.exceptionType}</code></td>
+                    <td style="word-break: break-word;">${e.summary}</td>
+                  </tr>
+                </j:forEach>
+              </tbody>
+            </table>
+          </j:otherwise>
+        </j:choose>
+      </j:if>
+    </l:main-panel>
+  </l:layout>
+</j:jelly>

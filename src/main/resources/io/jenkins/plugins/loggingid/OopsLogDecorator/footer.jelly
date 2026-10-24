@@ -1,0 +1,80 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:l="/lib/layout">
+  <j:set var="loggingId" value="${it.currentLoggingId}"/>
+  <j:if test="${loggingId != null}">
+    <!--
+      The core footer is a flex row, which breaks a details/summary layout nested inside it,
+      so the panel pins itself out of flow and lays its own children out as a column.
+    -->
+    <div id="logging-id-panel"
+         data-log-url="${rootURL}/logging-id/log?id=${loggingId}"
+         style="position: fixed; right: 1em; bottom: 1em; z-index: 9999;
+                width: min(1100px, calc(100vw - 2em)); max-height: 70vh; display: flex; flex-direction: column;
+                overflow: hidden; background: #fff; border: 1px solid #c9302c; border-radius: 6px;
+                box-shadow: 0 4px 18px rgba(0,0,0,0.25); font-size: 14px; text-align: left;">
+      <div style="flex: 0 0 auto; align-self: stretch; box-sizing: border-box; width: 100%;
+                  display: flex; align-items: center; justify-content: flex-start; gap: 0.8em;
+                  padding: 0.6em 1em; background: #c9302c; color: #fff; text-align: left;">
+        <span style="flex: 1 1 auto; min-width: 0; text-align: left; word-break: break-all;">
+          Error log for Logging ID=<code style="color: #fff;">${loggingId}</code>
+        </span>
+        <button type="button" id="logging-id-copy"
+                style="display: none; flex: 0 0 auto; cursor: pointer; background: transparent; color: #fff;
+                       border: 1px solid rgba(255,255,255,0.7); border-radius: 4px; padding: 0.15em 0.6em;
+                       font-size: 12px;">Copy</button>
+        <a href="${rootURL}/logging-id/?q=${loggingId}"
+           style="flex: 0 0 auto; color: #fff; text-decoration: underline;">Open in page</a>
+      </div>
+      <pre id="logging-id-log"
+           style="flex: 1 1 auto; margin: 0; padding: 1em; overflow: auto; white-space: pre-wrap;
+                  word-break: break-word; background: #f7f7f7;">Loading the captured log…</pre>
+    </div>
+    <script>
+      (function () {
+        var panel = document.getElementById('logging-id-panel');
+        var pre = document.getElementById('logging-id-log');
+        var copy = document.getElementById('logging-id-copy');
+        if (!panel || !pre) {
+          return;
+        }
+        var text = null;
+        if (copy) {
+          copy.addEventListener('click', function () {
+            if (!text) {
+              return;
+            }
+            if (!navigator.clipboard) {
+              return;
+            }
+            navigator.clipboard.writeText(text);
+          });
+        }
+        fetch(panel.getAttribute('data-log-url'), { credentials: 'same-origin' })
+          .then(function (response) {
+            if (response.status === 403) {
+              pre.textContent = 'Sign in as an administrator to view this log.';
+              return null;
+            }
+            if (!response.ok) {
+              pre.textContent = 'No captured log for this ID. It may have been evicted or Jenkins may have restarted.';
+              return null;
+            }
+            return response.text();
+          })
+          .then(function (body) {
+            if (body === null) {
+              return;
+            }
+            text = body;
+            pre.textContent = body;
+            if (copy) {
+              copy.style.display = '';
+            }
+          })
+          .catch(function () {
+            pre.textContent = 'Failed to load the log. Use the Logging ID page instead.';
+          });
+      })();
+    </script>
+  </j:if>
+</j:jelly>
