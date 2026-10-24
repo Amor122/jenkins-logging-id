@@ -16,4 +16,14 @@ jobs:
           java-version: 17
           cache: maven
       - name: Verify
-        run: mvn -B -ntp verify
+        run: |
+          set -o pipefail
+          mvn -B -ntp verify 2>&1 | tee build.log
+      - name: Summarize failure
+        if: failure()
+        run: |
+          {
+            echo '```'
+            grep -E '\[ERROR\]|Tests run:|BUILD|Caused by' build.log | tail -80
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
