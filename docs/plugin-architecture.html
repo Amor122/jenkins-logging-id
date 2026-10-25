@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logging ID 插件：组成与实现细节</title>
+<style>
+  :root {
+    --accent: #c9302c;
+    --accent-soft: #fdf2f2;
+    --ink: #1f2328;
+    --muted: #5c6670;
+    --line: #e3e6ea;
+    --bg: #ffffff;
+    --code-bg: #f5f7f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #fafbfc;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+  .page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 48px 32px 80px;
+    background: var(--bg);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  header.doc-head {
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 20px;
+    margin-bottom: 32px;
+  }
+  header.doc-head h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+    letter-spacing: -0.3px;
+  }
+  header.doc-head .sub {
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .meta span strong { color: var(--ink); font-weight: 600; }
+  h2 {
+    font-size: 21px;
+    margin: 44px 0 14px;
+    padding-left: 10px;
+    border-left: 4px solid var(--accent);
+  }
+  h3 { font-size: 16.5px; margin: 26px 0 10px; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+  code {
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 13px;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 12.8px;
+    line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 8px 11px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f3f5f7; font-weight: 600; }
+  tbody tr:nth-child(even) { background: #fbfcfd; }
+  .note {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .note strong { color: var(--accent); }
+  .diagram {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 18px;
+    margin: 18px 0;
+    overflow-x: auto;
+  }
+  .diagram figcaption {
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 10px;
+  }
+  .toc {
+    background: #f7f9fb;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 22px;
+    margin-bottom: 8px;
+  }
+  .toc h4 { margin: 0 0 8px; font-size: 14px; color: var(--muted); letter-spacing: .5px; }
+  .toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 32px; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc a:hover { color: var(--accent); text-decoration: underline; }
+  .tag {
+    display: inline-block;
+    font-size: 11.5px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: #eef1f4;
+    color: var(--muted);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  footer.doc-foot {
+    margin-top: 56px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 13px;
+  }
+  @media (max-width: 720px) {
+    .page { padding: 28px 18px 60px; }
+    .toc ol { columns: 1; }
+    header.doc-head h1 { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc-head">
+  <h1>Logging ID 插件：组成与实现细节</h1>
+  <div class="sub">把 Jenkins 的 Logging ID 从“System Log 里找得到就算运气好”变成“报错页直接看到完整堆栈”</div>
+  <div class="meta">
+    <span><strong>插件</strong> logging-id</span>
+    <span><strong>版本</strong> 1.0.1</span>
+    <span><strong>基线</strong> Jenkins 2.479.3 / Java 17</span>
+    <span><strong>仓库</strong> github.com/Amor122/jenkins-logging-id</span>
+  </div>
+</header>
+
+<div class="toc">
+  <h4>目录</h4>
+  <ol>
+    <li><a href="#background">问题与目标</a></li>
+    <li><a href="#architecture">整体结构</a></li>
+    <li><a href="#extpoints">扩展点与页面绑定</a></li>
+    <li><a href="#components">组件清单</a></li>
+    <li><a href="#store">捕获与存储</a></li>
+    <li><a href="#oops">Oops 页面板</a></li>
+    <li><a href="#page">查询页与日志端点</a></li>
+    <li><a href="#flow">运行时数据流</a></li>
+    <li><a href="#build">构建、测试与发布</a></li>
+    <li><a href="#deploy">部署与运维</a></li>
+    <li><a href="#limits">限制与取舍</a></li>
+  </ol>
+</div>
+
+<h2 id="background">1. 问题与目标</h2>
+
+<p>Jenkins 遇到未捕获异常时会生成一个 UUID 形式的 Logging ID，以 <code>WARNING</code> 级别打印
+<code>Caught unhandled exception with ID &lt;uuid&gt;</code> 并附完整堆栈，同时在页面上提示用户去 System Log 里按这个 ID 搜索。</p>
+
+<p>问题在于 System Log 页面由 <code>RingBufferLogHandler</code> 支撑，默认只保留 <strong>256 条</strong>记录。控制器日志一多，这条异常记录很快被轮转掉，用户按 ID 搜不到，只能登录服务器翻日志文件。</p>
+
+<p>插件的目标很具体：</p>
+<ul>
+  <li>在报错页（Oops 页）直接显示该 Logging ID 对应的完整日志，不再要求用户去别处搜索；</li>
+  <li>提供一个独立的查询页，可以按 ID、异常、logger、关键字检索历史记录；</li>
+  <li>捕获链路不依赖 System Log 的环形缓冲，不受其容量限制；</li>
+  <li>日志内容只对管理员可见。</li>
+</ul>
+
+<h2 id="architecture">2. 整体结构</h2>
+
+<p>插件由两条链路组成：一条在服务端把异常记录<strong>截获并另存</strong>，另一条在浏览器端把记录<strong>取回并渲染</strong>。两者通过 Logging ID 关联，互不依赖对方的生命周期。</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 900 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="插件整体结构图">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#7a848d"/>
+    </marker>
+    <style>
+      .box { fill: #fff; stroke: #ccd3d9; stroke-width: 1.2; rx: 6; }
+      .box-core { fill: #f6f7f8; stroke: #b9c1c8; stroke-width: 1.2; }
+      .box-accent { fill: #fdf2f2; stroke: #c9302c; stroke-width: 1.4; }
+      .t { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; fill: #1f2328; }
+      .t-sm { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 11.5px; fill: #5c6670; }
+      .t-mono { font-family: Consolas, monospace; font-size: 11.5px; fill: #5c6670; }
+      .edge { stroke: #7a848d; stroke-width: 1.2; fill: none; marker-end: url(#arrow); }
+      .edge-dashed { stroke: #a9b2ba; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <text class="t-sm" x="20" y="24">Jenkins 服务端</text>
+  <rect x="20" y="34" width="860" height="190" rx="8" fill="#fafbfc" stroke="#e3e6ea"/>
+
+  <rect class="box-core" x="45" y="58" width="210" height="66" rx="6"/>
+  <text class="t" x="150" y="84" text-anchor="middle">Jenkins 内核</text>
+  <text class="t-sm" x="150" y="103" text-anchor="middle">InstallUncaughtExceptionHandler</text>
+
+  <rect class="box-accent" x="330" y="58" width="220" height="66" rx="6"/>
+  <text class="t" x="440" y="84" text-anchor="middle">LoggingIdStore.CaptureHandler</text>
+  <text class="t-sm" x="440" y="103" text-anchor="middle">正则匹配 ID，只保留异常记录</text>
+
+  <rect class="box-accent" x="625" y="46" width="230" height="90" rx="6"/>
+  <text class="t" x="740" y="72" text-anchor="middle">LoggingIdStore 单例</text>
+  <text class="t-sm" x="740" y="92" text-anchor="middle">LinkedHashMap，默认 200 条</text>
+  <text class="t-sm" x="740" y="110" text-anchor="middle">按 ID 索引，插入序淘汰</text>
+
+  <path class="edge" d="M255 91 L330 91"/>
+  <path class="edge" d="M550 91 L625 91"/>
+  <text class="t-mono" x="292" y="82" text-anchor="middle">JUL LogRecord</text>
+
+  <rect class="box" x="330" y="150" width="220" height="56" rx="6"/>
+  <text class="t" x="440" y="174" text-anchor="middle">LoggingIdInitializer</text>
+  <text class="t-sm" x="440" y="192" text-anchor="middle">PLUGINS_STARTED 时安装 Handler</text>
+  <path class="edge-dashed" d="M440 150 L440 124"/>
+
+  <text class="t-sm" x="20" y="262">浏览器</text>
+  <rect x="20" y="272" width="860" height="140" rx="8" fill="#fafbfc" stroke="#e3e6ea"/>
+
+  <rect class="box" x="45" y="296" width="240" height="92" rx="6"/>
+  <text class="t" x="165" y="320" text-anchor="middle">Oops 页 footer 面板</text>
+  <text class="t-sm" x="165" y="339" text-anchor="middle">OopsLogDecorator + footer.jelly</text>
+  <text class="t-sm" x="165" y="357" text-anchor="middle">只渲染 ID，日志由浏览器拉取</text>
+  <text class="t-sm" x="165" y="375" text-anchor="middle">固定定位，独立滚动</text>
+
+  <rect class="box" x="340" y="296" width="240" height="92" rx="6"/>
+  <text class="t" x="460" y="320" text-anchor="middle">/logging-id/ 查询页</text>
+  <text class="t-sm" x="460" y="339" text-anchor="middle">LoggingIdAction + index.jelly</text>
+  <text class="t-sm" x="460" y="357" text-anchor="middle">搜索 / 级别筛选 / 详情</text>
+  <text class="t-sm" x="460" y="375" text-anchor="middle">仅 ADMINISTER 可见</text>
+
+  <rect class="box-accent" x="635" y="310" width="210" height="64" rx="6"/>
+  <text class="t" x="740" y="336" text-anchor="middle">/logging-id/log?id=…</text>
+  <text class="t-sm" x="740" y="355" text-anchor="middle">校验权限后返回纯文本</text>
+
+  <path class="edge" d="M285 342 L340 342"/>
+  <text class="t-mono" x="312" y="333" text-anchor="middle">导航</text>
+  <path class="edge" d="M580 342 L635 342"/>
+  <path class="edge" d="M285 322 C 470 250, 620 250, 720 310"/>
+  <text class="t-mono" x="500" y="262" text-anchor="middle">fetch（携带会话 Cookie）</text>
+  <path class="edge-dashed" d="M740 136 C 760 220, 800 260, 770 310"/>
+  <text class="t-mono" x="800" y="230" text-anchor="middle">读取</text>
+</svg>
+<figcaption>服务端捕获与浏览器渲染两条链路，通过 Logging ID 关联</figcaption>
+</figure>
+
+<h2 id="extpoints">3. 扩展点与页面绑定</h2>
+
+<p>插件没有自己的注册表，也没有任何 XML 配置。它依赖两套机制：Jenkins 的<strong>注解发现</strong>（谁被实例化）和 Stapler/Jelly 的<strong>命名约定</strong>（URL 与页面如何找到 Java 方法）。这一节把这两条链路拆开讲。</p>
+
+<h3>3.1 用到的扩展点</h3>
+
+<table>
+  <thead>
+    <tr><th style="width:22%">扩展点</th><th style="width:22%">实现类</th><th style="width:26%">登记方式</th><th>作用</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>hudson.model.PageDecorator</code></td>
+      <td><code>OopsLogDecorator</code></td>
+      <td><code>@Extension</code> + 同名目录下的 <code>footer.jelly</code></td>
+      <td>向所有使用 <code>&lt;l:layout&gt;</code> 的页面注入页脚片段</td>
+    </tr>
+    <tr>
+      <td><code>hudson.model.RootAction</code></td>
+      <td><code>LoggingIdAction</code></td>
+      <td><code>@Extension</code></td>
+      <td>挂载 <code>/logging-id/</code>，提供查询页和 <code>/log</code> 端点</td>
+    </tr>
+    <tr>
+      <td><code>hudson.init.Initializer</code></td>
+      <td><code>LoggingIdInitializer</code></td>
+      <td><code>@Initializer(after = InitMilestone.PLUGINS_STARTED)</code></td>
+      <td>启动时触发单例初始化，安装日志 Handler</td>
+    </tr>
+    <tr>
+      <td>JUL <code>java.util.logging.Handler</code></td>
+      <td><code>LoggingIdStore.CaptureHandler</code></td>
+      <td>运行期 <code>Logger.getLogger("").addHandler(...)</code></td>
+      <td>截获内核打印的异常记录（这是 JDK 扩展点，不是 Jenkins 扩展点）</td>
+    </tr>
+    <tr>
+      <td>请求属性 <code>jenkins.exception.id</code></td>
+      <td>核心写入、插件只读</td>
+      <td>无（约定）</td>
+      <td>把当前请求的 Logging ID 传给页面</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>3.2 注解如何变成实例</h3>
+
+<p><code>@Extension</code> 不是运行期扫描注解，而是构建期生成索引。打开构建产物 <code>logging-id.hpi</code>，内层 jar 里有：</p>
+
+<pre><code>WEB-INF/lib/logging-id.jar!/META-INF/annotations/hudson.Extension
+    io.jenkins.plugins.loggingid.LoggingIdAction
+    io.jenkins.plugins.loggingid.OopsLogDecorator
+
+WEB-INF/lib/logging-id.jar!/META-INF/annotations/hudson.Extension.txt
+    （同上，供人阅读的文本副本）</code></pre>
+
+<p>这个索引由 <code>maven-hpi-plugin</code> 在打包时生成，Jenkins 启动后由 <code>ExtensionList</code> 通过 sezpoz 读取，按接口分类实例化：实现了 <code>RootAction</code> 的进入 RootAction 列表，继承了 <code>PageDecorator</code> 的进入 PageDecorator 列表。<strong>因此新增一个扩展点类不需要改任何配置文件</strong>，重新打包即生效。</p>
+
+<p>索引里只有两个类，正好对应“一个 URL 入口 + 一个页面装饰器”；<code>LoggingIdInitializer</code> 不实现 Jenkins 接口，只靠 <code>@Initializer</code> 注解被初始化流程调用，所以不出现在这个索引里。</p>
+
+<h3>3.3 Jelly 视图如何被定位</h3>
+
+<p>Stapler 解析 URL 得到模型对象后，会在<strong>该对象所属类的包路径下</strong>找同名目录里的视图文件。产物中实际存在的只有两个视图：</p>
+
+<pre><code>io/jenkins/plugins/loggingid/LoggingIdAction/index.jelly
+io/jenkins/plugins/loggingid/OopsLogDecorator/footer.jelly</code></pre>
+
+<table>
+  <thead>
+    <tr><th style="width:24%">URL / 触发点</th><th style="width:22%">模型对象（<code>it</code>）</th><th style="width:26%">视图</th><th>渲染方式</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>/logging-id/</code></td>
+      <td><code>LoggingIdAction</code> 实例</td>
+      <td><code>LoggingIdAction/index.jelly</code></td>
+      <td>URL 末端就是对象本身，Stapler 取 <code>index.jelly</code> 渲染</td>
+    </tr>
+    <tr>
+      <td><code>/logging-id/log?id=…</code></td>
+      <td>同上，但命中 <code>doLog</code> 方法</td>
+      <td>无视图</td>
+      <td>方法直接返回 <code>HttpResponse</code>（纯文本 / 404）</td>
+    </tr>
+    <tr>
+      <td>任何使用 layout 的页面（含 Oops）</td>
+      <td><code>OopsLogDecorator</code> 实例</td>
+      <td><code>OopsLogDecorator/footer.jelly</code></td>
+      <td>由核心 <code>layout.jelly</code> 主动 <code>st:include</code> 进来</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>3.4 <code>it.xxx</code> 是怎么调到 Java 的</h3>
+
+<p>Jelly 里的 <code>${it.query}</code> 这类表达式，会按 JavaBean 约定反射调用 getter：属性名首字母大写加 <code>get</code>，布尔类型优先找 <code>is</code>。插件里用到的对应关系如下。</p>
+
+<table>
+  <thead>
+    <tr><th style="width:26%">模板写法</th><th style="width:30%">实际调用</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>${it.permitted}</code></td><td><code>isPermitted()</code></td><td>决定是否渲染搜索区与表格</td></tr>
+    <tr><td><code>${it.query}</code></td><td><code>getQuery()</code></td><td>读 <code>?q=</code> 并回填输入框</td></tr>
+    <tr><td><code>${it.levelFilter}</code></td><td><code>getLevelFilter()</code></td><td>读 <code>?level=</code>，驱动下拉选中项</td></tr>
+    <tr><td><code>${it.entries}</code></td><td><code>getEntries()</code></td><td>搜索 + 级别过滤后的列表</td></tr>
+    <tr><td><code>${it.selected}</code></td><td><code>getSelected()</code></td><td>当前命中的单条，非空则渲染详情卡片</td></tr>
+    <tr><td><code>${it.maxEntries}</code> / <code>${it.storedCount}</code></td><td><code>getMaxEntries()</code> / <code>getStoredCount()</code></td><td>页面顶部的容量与条数提示</td></tr>
+    <tr><td><code>${it.currentLoggingId}</code></td><td><code>getCurrentLoggingId()</code></td><td>装饰器从请求属性取当前 ID</td></tr>
+    <tr><td><code>${selected.exceptionType}</code> 等</td><td><code>LoggingIdEntry.getExceptionType()</code> …</td><td>详情与表格逐字段取用</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <strong>安全性：</strong>两个模板首行都是 <code>&lt;?jelly escape-by-default='true'?&gt;</code>。这意味着 <code>${selected.text}</code> 里的堆栈、<code>${e.summary}</code> 里的异常消息都会被自动 HTML 转义，异常内容不可能变成可执行脚本。这是“日志内容来自不可信输入”时的必要设置。
+</div>
+
+<h3>3.5 方法名如何变成 URL</h3>
+
+<p>Stapler 的方法派发规则是：URL 片段 <code>log</code> 对应 <code>doLog()</code>，参数用 <code>@QueryParameter</code> 从查询串绑定。</p>
+
+<pre><code>// GET /logging-id/log?id=3c68ac42-…
+public HttpResponse doLog(@QueryParameter String id) { … }</code></pre>
+
+<p>另外三个方法是 <code>RootAction</code> 契约的一部分，不属于 Stapler 反射：</p>
+<ul>
+  <li><code>getUrlName()</code> 返回 <code>logging-id</code>，决定挂载路径 <code>/logging-id/</code>；</li>
+  <li><code>getDisplayName()</code> 返回侧边栏显示名；</li>
+  <li><code>getIconFileName()</code> 返回 <code>document.png</code>，无权限时返回 <code>null</code>，侧边栏条目直接消失。</li>
+</ul>
+
+<h3>3.6 核心是怎么把 <code>footer.jelly</code> 拼进 Oops 页的</h3>
+
+<p>这是“页面和代码结合”最关键的一环。核心的 <code>lib/layout/layout.jelly</code> 在页脚处遍历所有 PageDecorator，并用 <code>st:include</code> 把各自的 <code>footer.jelly</code> 包含进来（<code>optional="true"</code> 表示没提供该视图的装饰器会被跳过）：</p>
+
+<pre><code>&lt;footer class="page-footer jenkins-mobile-hide"&gt;
+  &lt;div class="page-footer__flex-row"&gt;
+    &lt;div class="page-footer__footer-id-placeholder" id="footer"&gt;&lt;/div&gt;
+    &lt;j:forEach var="pd" items="${h.pageDecorators}"&gt;
+      &lt;st:include it="${pd}" page="footer.jelly" optional="true" /&gt;
+    &lt;/j:forEach&gt;
+    …</code></pre>
+
+<p>三点直接结论：</p>
+<ul>
+  <li><code>it="${pd}"</code> 把 <code>it</code> 绑定成装饰器实例，所以模板里才能写 <code>it.currentLoggingId</code>；</li>
+  <li><code>footer.jelly</code> 会在<strong>每一个</strong> layout 页面被调用，不只是 Oops 页——因此模板必须用 <code>&lt;j:if test="${loggingId != null}"&gt;</code> 自限；</li>
+  <li>包含点是 <code>page-footer__flex-row</code> 这个 flex 容器，这正是当初 <code>&lt;details&gt;</code> 被排成左右两列、日志看起来被截断的根因，也是后来改用 fixed 悬浮的直接原因。</li>
+</ul>
+
+<p>而 Oops 页本身（<code>jenkins/model/Jenkins/oops.jelly</code>）使用标准 layout，并把 ID 写进页面：</p>
+
+<pre><code>&lt;l:layout title="Jenkins" type="one-column"&gt;
+  &lt;l:header /&gt;
+  &lt;l:main-panel&gt;
+    …
+    &lt;p&gt;Logging ID=${request2.getAttribute('jenkins.exception.id')}&lt;/p&gt;</code></pre>
+
+<p>这个属性由核心的 <code>InstallUncaughtExceptionHandler</code> 在捕获异常时写入请求。插件的装饰器读的是<strong>同一个属性</strong>，因此面板上的 ID 与页面正文里的 ID 必然一致，不需要额外的上下文传递。</p>
+
+<h3>3.7 三条完整调用链</h3>
+
+<table>
+  <thead><tr><th style="width:20%">场景</th><th>链路</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>查询页渲染</td>
+      <td><code>GET /logging-id/?q=…</code> → RootAction 实例 → <code>LoggingIdAction/index.jelly</code> → <code>getQuery()</code> / <code>getEntries()</code> / <code>getSelected()</code> → <code>store.search()</code> / <code>store.resolve()</code></td>
+    </tr>
+    <tr>
+      <td>Oops 面板</td>
+      <td>核心渲染 <code>oops.jelly</code> → <code>layout.jelly</code> 遍历 PageDecorator → <code>st:include it=pd page=footer.jelly</code> → <code>getCurrentLoggingId()</code> → 输出面板 → 浏览器 <code>fetch</code> <code>/logging-id/log?id=…</code> → <code>doLog()</code> → <code>checkPermission</code> → <code>HttpResponses.plainText</code></td>
+    </tr>
+    <tr>
+      <td>启动安装</td>
+      <td>Jenkins 启动 → <code>@Initializer(after = PLUGINS_STARTED)</code> → <code>LoggingIdStore.get()</code> → 构造单例 → <code>addHandler(CaptureHandler)</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="components">4. 组件清单</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:31%">文件</th><th style="width:17%">角色</th><th>职责</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>LoggingIdStore.java</code></td>
+      <td>服务端 · 单例</td>
+      <td>安装 JUL Handler、匹配 ID、环形存储、精确/前缀解析、全文检索</td>
+    </tr>
+    <tr>
+      <td><code>LoggingIdEntry.java</code></td>
+      <td>服务端 · 数据模型</td>
+      <td>一条异常记录：ID、时间、级别、logger、消息、堆栈；派生摘要、异常类型、根因、纯文本</td>
+    </tr>
+    <tr>
+      <td><code>LoggingIdInitializer.java</code></td>
+      <td>服务端 · 生命周期</td>
+      <td>在 <code>InitMilestone.PLUGINS_STARTED</code> 之后触发单例初始化，确保 Handler 尽早安装</td>
+    </tr>
+    <tr>
+      <td><code>OopsLogDecorator.java</code></td>
+      <td>服务端 · 页面装饰</td>
+      <td><code>PageDecorator</code> 扩展，从请求属性 <code>jenkins.exception.id</code> 取出当前 Logging ID</td>
+    </tr>
+    <tr>
+      <td><code>OopsLogDecorator/footer.jelly</code></td>
+      <td>前端 · 注入模板</td>
+      <td>仅在存在 Logging ID 时渲染悬浮面板，前端 <code>fetch</code> 日志正文</td>
+    </tr>
+    <tr>
+      <td><code>LoggingIdAction.java</code></td>
+      <td>服务端 · 路由</td>
+      <td><code>RootAction</code>，挂载 <code>/logging-id/</code>；提供查询、筛选、详情与 <code>doLog</code> 端点</td>
+    </tr>
+    <tr>
+      <td><code>LoggingIdAction/index.jelly</code></td>
+      <td>前端 · 查询页</td>
+      <td>搜索表单、级别筛选、记录表格、详情卡片、复制与下载</td>
+    </tr>
+    <tr>
+      <td><code>LoggingIdActionTest.java</code></td>
+      <td>测试</td>
+      <td><code>JenkinsRule</code> 集成测试：捕获、页面渲染、原始日志端点、空状态</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="store">5. 捕获与存储：LoggingIdStore</h2>
+
+<h3>5.1 为什么不用 System Log</h3>
+
+<p>System Log 的环形缓冲大小由核心配置决定，默认 256 条，且是所有日志共享的一个窗口。插件如果要“保证能查到”，就不能寄生在这个窗口里，必须自己持有一份独立存储。这也是整个插件最核心的取舍。</p>
+
+<h3>5.2 单例与安装时机</h3>
+
+<p>存储是进程级单例，用静态内部类 <code>Holder</code> 实现懒加载。构造时完成三件事：确定容量、创建 <code>LinkedHashMap</code>、安装 <code>CaptureHandler</code>。</p>
+
+<pre><code>maxEntries = Math.max(1, Integer.getInteger(
+        LoggingIdStore.class.getName() + ".maxEntries", 200));</code></pre>
+
+<p>容量默认 200，可用系统属性 <code>io.jenkins.plugins.loggingid.LoggingIdStore.maxEntries</code> 覆盖（下限 1）。</p>
+
+<p><code>LoggingIdInitializer</code> 用 <code>@Initializer(after = InitMilestone.PLUGINS_STARTED)</code> 主动触发一次单例初始化，这样即使插件是在运行中被动态加载的，Handler 也会尽快挂上；同时任何代码路径第一次调用 <code>LoggingIdStore.get()</code> 时也会懒加载兜底。</p>
+
+<h3>5.3 Handler 如何过滤</h3>
+
+<p><code>CaptureHandler</code> 被添加到 JUL 的根 logger 上，级别设为 <code>ALL</code>。每条 <code>LogRecord</code> 只做一次正则匹配：</p>
+
+<pre><code>Pattern.compile("Caught unhandled exception with ID ([0-9a-fA-F-]{36})")</code></pre>
+
+<p>只有命中这个格式的记录才会被转成 <code>LoggingIdEntry</code> 并入表，其余日志直接丢弃。这样既不会把根 logger 变成第二个全量日志收集器，也避免了额外的内存开销。</p>
+
+<div class="note">
+  <strong>健壮性：</strong><code>publish()</code> 内部捕获了所有 <code>RuntimeException</code>。诊断插件绝不能因为自身异常干扰 Jenkins 的日志输出——这是插件类代码的底线。
+</div>
+
+<h3>5.4 淘汰策略与并发</h3>
+
+<p>底层是 <code>Collections.synchronizedMap(new LinkedHashMap&lt;&gt;(16, 0.75f, false))</code>，访问序关闭、保持插入序，重写 <code>removeEldestEntry</code> 在超过容量时淘汰最旧的一条。</p>
+
+<pre><code>protected boolean removeEldestEntry(Map.Entry&lt;String, LoggingIdEntry&gt; eldest) {
+    return super.size() &gt; maxEntries;
+}</code></pre>
+
+<p>这里用 <code>super.size()</code> 而不是 <code>size()</code> 并非风格问题：在匿名子类里直接写 <code>size()</code> 会被 SpotBugs 判为
+<code>IA_AMBIGUOUS_INVOCATION_OF_INHERITED_OR_OUTER_METHOD</code>（外层与继承方法的调用歧义），CI 会因此直接失败。</p>
+
+<p>读取时先复制一份值集合再反转（最新在前），复制在 <code>synchronized (entries)</code> 内完成，避免遍历时被写入干扰。</p>
+
+<h3>5.5 两种查找语义</h3>
+
+<table>
+  <thead><tr><th style="width:22%">方法</th><th>语义</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>get(id)</code></td><td>精确匹配</td><td>内部按 ID 取单条</td></tr>
+    <tr><td><code>resolve(query)</code></td><td>先精确，再唯一前缀匹配；前缀命中多条则返回 <code>null</code></td><td>支持从截图里抄了一半的 ID</td></tr>
+    <tr><td><code>search(query)</code></td><td>大小写不敏感子串匹配，范围覆盖 ID、消息、logger、堆栈、级别</td><td>查询页关键字搜索</td></tr>
+  </tbody>
+</table>
+
+<h2 id="oops">6. Oops 页面板：OopsLogDecorator</h2>
+
+<h3>6.1 注入点</h3>
+
+<p>Jenkins 的 <code>oops.jelly</code> 使用标准 <code>&lt;l:layout&gt;</code>，因此 <code>PageDecorator</code> 是最干净的扩展点——不需要改核心模板。插件只提供 <code>footer.jelly</code>，它会在所有使用 layout 的页面被渲染，所以模板里先做一层判断：</p>
+
+<pre><code>&lt;j:set var="loggingId" value="${it.currentLoggingId}"/&gt;
+&lt;j:if test="${loggingId != null}"&gt; … &lt;/j:if&gt;</code></pre>
+
+<p><code>getCurrentLoggingId()</code> 从请求属性 <code>jenkins.exception.id</code> 读取，这个属性只在错误分发时由核心写入，所以面板天然只出现在 Oops 页。</p>
+
+<h3>6.2 一个必须绕开的坑：Oops 页是匿名上下文</h3>
+
+<div class="note">
+  <strong>关键事实：</strong>Oops 页由容器的 error dispatch 渲染，<strong>不经过安全过滤器</strong>，请求在这些过滤器眼里始终是匿名的。因此在 <code>footer.jelly</code> 里用 <code>hasPermission(ADMINISTER)</code> 决定“要不要显示日志”永远为假，面板会整体消失。
+</div>
+
+<p>由此形成最终方案：</p>
+<ul>
+  <li>面板<strong>只渲染 Logging ID</strong>（ID 本身不是敏感信息）；</li>
+  <li>日志正文由浏览器带着<strong>自己的会话 Cookie</strong> 请求 <code>/logging-id/log?id=…</code>；</li>
+  <li>权限校验放在那个端点里，用真实会话判断；匿名请求得到 <code>403</code>。</li>
+</ul>
+
+<h3>6.3 布局：为什么是 fixed 悬浮</h3>
+
+<p>核心页脚是 flex 行布局。最初把 <code>&lt;details&gt;</code> 直接嵌进去，结果 <code>summary</code> 与 <code>&lt;pre&gt;</code> 被排成左右两列：标题被挤成窄条，正文从面板中间开始并溢出到屏幕右侧，看起来像日志被截断。</p>
+
+<p>最终改为：面板 <code>position: fixed</code> 脱离页脚流，内部自己用纵向 flex 排版——标题栏独占一行（<code>align-self: stretch</code> 撑满宽度），正文 <code>flex: 1 1 auto</code> 占满剩余空间并在面板内滚动。宽度取 <code>min(1100px, calc(100vw - 2em))</code>，既接近满宽又不贴边。</p>
+
+<pre><code>width: min(1100px, calc(100vw - 2em));
+max-height: 70vh;
+display: flex; flex-direction: column;
+overflow: hidden;</code></pre>
+
+<h3>6.4 前端取数逻辑</h3>
+
+<p>面板通过 <code>data-log-url</code> 暴露地址，页面加载后 <code>fetch</code> 一次，按状态码给出不同文案：</p>
+
+<table>
+  <thead><tr><th style="width:18%">状态</th><th>面板显示</th></tr></thead>
+  <tbody>
+    <tr><td><code>200</code></td><td>完整日志文本，同时显示 Copy 按钮</td></tr>
+    <tr><td><code>403</code></td><td>“Sign in as an administrator to view this log.”</td></tr>
+    <tr><td>其他非 2xx</td><td>“No captured log for this ID. It may have been evicted or Jenkins may have restarted.”</td></tr>
+    <tr><td>网络异常</td><td>“Failed to load the log. Use the Logging ID page instead.”</td></tr>
+  </tbody>
+</table>
+
+<p>Copy 按钮默认隐藏，拿到正文后才出现，避免复制到占位文案。</p>
+
+<h2 id="page">7. 查询页与日志端点：LoggingIdAction</h2>
+
+<h3>7.1 路由与权限</h3>
+
+<p><code>RootAction</code> 挂在 <code>/logging-id/</code>，显示名 “Logging ID”，图标 <code>document.png</code>。<code>getIconFileName()</code> 在无权限时返回 <code>null</code>，侧边栏链接对普通用户直接不出现。</p>
+
+<pre><code>public HttpResponse doLog(@QueryParameter String id) {
+    Jenkins.get().checkPermission(Jenkins.ADMINISTER);
+    LoggingIdEntry entry = store.resolve(id);
+    if (entry == null) {
+        return HttpResponses.notFound();
+    }
+    return HttpResponses.plainText(entry.getText());
+}</code></pre>
+
+<p>同一个端点承担两个用途：Oops 面板的 <code>fetch</code>，以及查询页“Download full log”的下载链接（浏览器按 <code>download</code> 属性存成 <code>logging-id-&lt;id&gt;.txt</code>）。</p>
+
+<h3>7.2 页面数据来源</h3>
+
+<p>模板不直接访问存储，而是通过 Action 的 getter 取值，查询参数就地解析：</p>
+
+<table>
+  <thead><tr><th style="width:24%">Getter</th><th>来源</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><code>getQuery()</code></td><td><code>?q=</code></td><td>关键字或 Logging ID</td></tr>
+    <tr><td><code>getLevelFilter()</code></td><td><code>?level=</code></td><td>空 / <code>WARNING</code> / <code>SEVERE</code></td></tr>
+    <tr><td><code>getEntries()</code></td><td>store.search + 级别过滤</td><td>无权限时返回空列表</td></tr>
+    <tr><td><code>getSelected()</code></td><td>store.resolve(query)</td><td>命中则渲染详情卡片</td></tr>
+    <tr><td><code>getStoredCount()</code> / <code>getMaxEntries()</code></td><td>存储元信息</td><td>页面顶部显示“当前 X 条 / 上限 Y 条”</td></tr>
+  </tbody>
+</table>
+
+<h3>7.3 页面构成</h3>
+
+<ul>
+  <li><strong>搜索区</strong>：文本框 + 级别下拉 + Search 按钮，GET 提交，参数直接体现在 URL 上，便于收藏或转发。</li>
+  <li><strong>统计行</strong>：保留上限、当前条数、匹配条数；并明确提示“记录不跨重启持久化”。</li>
+  <li><strong>详情卡片</strong>（当 <code>q</code> 命中时）：时间、级别、logger、异常类型、根因（最内层 <code>Caused by:</code>）、复制按钮、下载链接、完整堆栈。</li>
+  <li><strong>记录表格</strong>：时间、Logging ID（可点击回到详情）、级别、异常类型、消息摘要。ID 单行显示，异常列允许换行，避免省略号截断。</li>
+</ul>
+
+<h3>7.4 LoggingIdEntry 的派生字段</h3>
+
+<table>
+  <thead><tr><th style="width:26%">字段</th><th>生成方式</th></tr></thead>
+  <tbody>
+    <tr><td><code>time</code></td><td><code>yyyy-MM-dd HH:mm:ss.SSS</code>，系统默认时区</td></tr>
+    <tr><td><code>summary</code></td><td>消息首行，超过 200 字符截断加省略号</td></tr>
+    <tr><td><code>exceptionType</code></td><td>堆栈首行（异常类名 + 消息）</td></tr>
+    <tr><td><code>rootCause</code></td><td>遍历堆栈取最后一条 <code>Caused by:</code>，即最内层原因</td></tr>
+    <tr><td><code>text</code></td><td>“时间 级别 logger + 消息 + 堆栈”的纯文本，供复制/下载/面板渲染</td></tr>
+  </tbody>
+</table>
+
+<h2 id="flow">8. 运行时数据流</h2>
+
+<figure class="diagram">
+<svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="报错页数据流时序图">
+  <defs>
+    <marker id="a2" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#7a848d"/>
+    </marker>
+    <style>
+      .lane { stroke: #dfe3e8; stroke-width: 1; }
+      .lbl { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 12.5px; fill: #1f2328; }
+      .lbl-sm { font-family: Consolas, monospace; font-size: 11px; fill: #5c6670; }
+      .msg { stroke: #7a848d; stroke-width: 1.2; fill: none; marker-end: url(#a2); }
+    </style>
+  </defs>
+
+  <rect x="30" y="18" width="150" height="34" rx="6" fill="#f6f7f8" stroke="#b9c1c8"/>
+  <text class="lbl" x="105" y="40" text-anchor="middle">Jenkins 内核</text>
+  <rect x="255" y="18" width="150" height="34" rx="6" fill="#fdf2f2" stroke="#c9302c"/>
+  <text class="lbl" x="330" y="40" text-anchor="middle">LoggingIdStore</text>
+  <rect x="480" y="18" width="150" height="34" rx="6" fill="#fff" stroke="#ccd3d9"/>
+  <text class="lbl" x="555" y="40" text-anchor="middle">Oops 面板</text>
+  <rect x="705" y="18" width="150" height="34" rx="6" fill="#fdf2f2" stroke="#c9302c"/>
+  <text class="lbl" x="780" y="40" text-anchor="middle">/logging-id/log</text>
+
+  <line class="lane" x1="105" y1="52" x2="105" y2="300"/>
+  <line class="lane" x1="330" y1="52" x2="330" y2="300"/>
+  <line class="lane" x1="555" y1="52" x2="555" y2="300"/>
+  <line class="lane" x1="780" y1="52" x2="780" y2="300"/>
+
+  <path class="msg" d="M105 88 L330 88"/>
+  <text class="lbl-sm" x="215" y="80" text-anchor="middle">WARNING + 堆栈</text>
+
+  <path class="msg" d="M330 128 L330 128" />
+  <text class="lbl-sm" x="345" y="126">正则提取 ID，入表（满 200 淘汰最旧）</text>
+
+  <path class="msg" d="M105 168 L555 168"/>
+  <text class="lbl-sm" x="330" y="160" text-anchor="middle">渲染 Oops 页（匿名上下文）</text>
+
+  <path class="msg" d="M555 208 L780 208"/>
+  <text class="lbl-sm" x="665" y="200" text-anchor="middle">fetch ?id=… + Cookie</text>
+
+  <path class="msg" d="M780 248 L330 248"/>
+  <text class="lbl-sm" x="555" y="240" text-anchor="middle">checkPermission + resolve</text>
+
+  <path class="msg" d="M780 288 L555 288"/>
+  <text class="lbl-sm" x="665" y="280" text-anchor="middle">200 纯文本 / 403 / 404</text>
+</svg>
+<figcaption>一次 Oops 从产生到面板显示完整堆栈的过程</figcaption>
+</figure>
+
+<ol>
+  <li>内核捕获未处理异常，生成 UUID，以 WARNING 打印 <code>Caught unhandled exception with ID …</code> 并附堆栈。</li>
+  <li><code>CaptureHandler</code> 匹配到 ID，把记录转成 <code>LoggingIdEntry</code> 存入内存表。</li>
+  <li>容器渲染 Oops 页，<code>footer.jelly</code> 从 <code>jenkins.exception.id</code> 拿到 ID，输出悬浮面板与 <code>data-log-url</code>。</li>
+  <li>浏览器 <code>fetch</code> 该地址（携带会话），端点校验 <code>ADMINISTER</code> 后返回纯文本。</li>
+  <li>面板把文本写入 <code>&lt;pre&gt;</code>，显示 Copy 按钮；查询页则通过 <code>/logging-id/</code> 提供历史检索。</li>
+</ol>
+
+<h2 id="build">9. 构建、测试与发布</h2>
+
+<h3>9.1 工程配置</h3>
+
+<table>
+  <thead><tr><th style="width:30%">项</th><th>值</th><th>原因</th></tr></thead>
+  <tbody>
+    <tr><td>parent</td><td><code>org.jenkins-ci.plugins:plugin:5.7</code></td><td>配套 Jakarta 版测试框架；4.88 会因 <code>SuspiciousRequestFilter is not a javax.servlet.Filter</code> 导致页面全 503</td></tr>
+    <tr><td>jenkins.version</td><td><code>2.479.3</code></td><td>满足“2.486 以上可用”的基线要求</td></tr>
+    <tr><td>packaging</td><td><code>hpi</code></td><td>Jenkins 插件标准产物</td></tr>
+    <tr><td>jakarta.servlet-api</td><td><code>5.0.0</code>，provided</td><td>编译期需要 <code>HttpServlet</code> / <code>HttpServletRequest</code> 符号</td></tr>
+    <tr><td>Java</td><td>17+</td><td>2.479 基线与 parent 5.7 的要求</td></tr>
+  </tbody>
+</table>
+
+<h3>9.2 verify 阶段做了什么</h3>
+
+<p><code>mvn verify</code> 在打 hpi 之外还会依次执行 license、hpi、spotbugs、spotless 等绑定在 verify 上的检查。也就是说：<strong>本地 <code>mvn package</code> 成功不代表 CI 会过</strong>——第一版就是在 <code>package</code> 阶段通过、在 <code>verify</code> 阶段被 SpotBugs 拦下的。</p>
+
+<h3>9.3 测试</h3>
+
+<p><code>LoggingIdActionTest</code> 用 <code>JenkinsRule</code> 起真实实例，共 3 个用例，加上插件父 POM 自动注入的 6 个校验用例，合计 9 个：</p>
+
+<ul>
+  <li><code>capturesAndRendersLoggingId</code>：手工打印一条带 ID 的 WARNING，访问 <code>logging-id/?q=&lt;id&gt;</code>，断言页面包含 ID、异常消息、异常类名与根因。</li>
+  <li><code>servesRawLogTextForOopsPanel</code>：请求 <code>logging-id/log?id=&lt;id&gt;</code>，断言返回的纯文本包含 ID 与异常消息。</li>
+  <li><code>rendersEmptyState</code>：无记录时页面仍正常渲染，包含标题与容量提示。</li>
+</ul>
+
+<h3>9.4 CI 与发布</h3>
+
+<table>
+  <thead><tr><th style="width:24%">工作流</th><th style="width:22%">触发</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td><code>.github/workflows/ci.yml</code></td><td>push main / PR</td><td>JDK 17 + <code>mvn -B -ntp verify</code>；失败时把关键日志写进 run 摘要</td></tr>
+    <tr><td><code>.github/workflows/publish.yml</code></td><td>tag <code>v*</code> / 手动</td><td><code>mvn deploy</code> 发布到 GitHub Packages，使用内置 <code>GITHUB_TOKEN</code></td></tr>
+  </tbody>
+</table>
+
+<p>发布目标在 POM 的 <code>distributionManagement</code> 中声明：</p>
+
+<pre><code>&lt;repository&gt;
+  &lt;id&gt;github&lt;/id&gt;
+  &lt;url&gt;https://maven.pkg.github.com/Amor122/jenkins-logging-id&lt;/url&gt;
+&lt;/repository&gt;</code></pre>
+
+<p>CI 侧由 <code>actions/setup-java</code> 的 <code>server-id: github</code> 自动生成 <code>settings.xml</code> 凭据，无需在仓库里保存任何 token。</p>
+
+<h3>9.5 版本演进</h3>
+
+<table>
+  <thead><tr><th style="width:16%">版本</th><th>结果</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>1.0.0</td><td>CI 失败</td><td>SpotBugs 报 <code>removeEldestEntry</code> 中 <code>size()</code> 调用歧义</td></tr>
+    <tr><td>1.0.1</td><td>CI 通过，tag 触发发布</td><td>改为 <code>super.size()</code>，SpotBugs 0 bug</td></tr>
+  </tbody>
+</table>
+
+<h2 id="deploy">10. 部署与运维</h2>
+
+<p>当前调试实例是 WSL 中的 Jenkins（<code>127.0.0.1:8080</code>），插件以 hpi 形式直接放入插件目录：</p>
+
+<pre><code>cp target/logging-id.hpi /var/lib/jenkins/plugins/logging-id.hpi
+chown jenkins:jenkins /var/lib/jenkins/plugins/logging-id.hpi
+systemctl restart jenkins</code></pre>
+
+<div class="note">
+  <strong>为什么不走上传接口：</strong>该实例上 <code>/pluginManager/uploadPlugin</code> 会返回 500，根因是 Jenkins 2.528.3 自身的 <code>doUploadPluginImpl</code> 抛出
+  <code>IndexOutOfBoundsException</code>（与 crumb 无关），因此改为直接落盘 + 重启。
+</div>
+
+<p>运维上需要知道的三点：</p>
+<ul>
+  <li>记录只存内存，重启即清空，不落盘、不跨节点；</li>
+  <li>只捕获内核未捕获异常处理器打印的记录，普通 WARNING 不会进入；</li>
+  <li>日志正文仅管理员可取，普通用户最多在报错页看到一个 ID。</li>
+</ul>
+
+<h2 id="limits">11. 限制与取舍</h2>
+
+<table>
+  <thead><tr><th style="width:32%">限制</th><th>原因 / 取舍</th></tr></thead>
+  <tbody>
+    <tr><td>重启后记录丢失</td><td>刻意不持久化：避免磁盘写入、脱敏与清理问题，与 System Log 行为保持一致</td></tr>
+    <tr><td>最多 200 条</td><td>异常记录带完整堆栈，体积不小；200 条足够覆盖“最近一次排查”的窗口，可用系统属性调整</td></tr>
+    <tr><td>只匹配固定句式</td><td>依赖核心 <code>Caught unhandled exception with ID …</code> 的格式；核心若改文案需要同步调整正则</td></tr>
+    <tr><td>匿名访问只能看到 ID</td><td>Oops 页走 error dispatch，安全过滤器不参与，无法在渲染期判断身份；权限校验后移到数据端点</td></tr>
+    <tr><td>面板遮挡页面内容</td><td>悬浮面板换取了“不破坏页脚布局”的稳定性；宽度与最大高度都做了上限</td></tr>
+  </tbody>
+</table>
+
+<footer class="doc-foot">
+  <p>文档对应代码版本 1.0.1（commit 601c181）。仓库：github.com/Amor122/jenkins-logging-id</p>
+</footer>
+
+</div>
+</body>
+</html>

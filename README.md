@@ -65,6 +65,13 @@ and supply credentials with `packages:read` in `~/.m2/settings.xml` under the `g
 - Log content is served to administrators only. The error page itself may be rendered for an
   anonymous session, so the panel can only show the ID in that case.
 
+## Architecture
+
+See [docs/plugin-architecture.html](docs/plugin-architecture.html) for how the plugin is put
+together: which extension points it registers (`PageDecorator`, `RootAction`, `@Initializer`, a JUL
+`Handler`), how `@Extension` annotations become instances at build time, how Jelly views are located
+for each model object, and how the core `layout.jelly` pulls `footer.jelly` into the Oops page.
+
 ## Development
 
 ```bash
