@@ -39,3 +39,29 @@ jobs:
           git add -f ci-logs/publish-failure.log
           git commit -m "ci: capture publish failure log [skip ci]"
           git push -f origin ci-log
+
+  # Independent of the Packages deploy: a failed deploy must not leave the tag without a
+  # downloadable hpi, and a failed release must not block the Maven artifact.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      - name: Build hpi
+        run: mvn -B -ntp verify
+      - name: Name artifact after the tag
+        run: |
+          mv target/logging-id.hpi "target/logging-id-${GITHUB_REF_NAME}.hpi"
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: 'target/logging-id-*.hpi'
+          generate_release_notes: true
+          fail_on_unmatched_files: true
